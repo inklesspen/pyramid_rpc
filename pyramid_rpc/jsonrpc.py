@@ -190,6 +190,8 @@ class jsonrpc_batch_tween(object):
 
                 # Dump the combined json response_body list into response.body
                 response.body = json.dumps(response_body)
+            else:
+                raise ValueError
         except ValueError:
             response = self.handler(request)
 
