@@ -49,7 +49,35 @@ class TestJSONRPCIntegration(unittest.TestCase):
 
     def _callFUT(self, app, method, params, id=5, version='2.0',
                  path='/api/jsonrpc', content_type='application/json',
-                 expect_error=False):
+                 expect_error=False, batch=False, batch_count=3):
+        if batch is True:
+            body = [self._generateBody(id, version, method, params) for i in range(0, batch_count)]
+        else:
+            body = self._generateBody(id, version, method, params)
+
+        resp = app.post(path, content_type=content_type,
+                        params=json.dumps(body))
+        self.assertEqual(resp.status_int, 200)
+        if id is not None or expect_error:
+            self.assertEqual(resp.content_type, 'application/json')
+            result = resp.json
+            self._assert_callFUT(id, result)
+        else:
+            result = resp.json
+            self.assertEqual(result, '')
+        return result
+
+    def _assert_callFUT(self, id, result):
+        if type(result) is list:
+            for r in result:
+                self._assert_callFUT(id, r)
+            return
+
+        self.assertEqual(result['jsonrpc'], '2.0')
+        self.assertEqual(result['id'], id)
+
+
+    def _generateBody(self, id, version, method, params):
         body = {}
         if id is not None:
             body['id'] = id
@@ -59,18 +87,7 @@ class TestJSONRPCIntegration(unittest.TestCase):
             body['method'] = method
         if params is not None:
             body['params'] = params
-        resp = app.post(path, content_type=content_type,
-                        params=json.dumps(body))
-        self.assertEqual(resp.status_int, 200)
-        if id is not None or expect_error:
-            self.assertEqual(resp.content_type, 'application/json')
-            result = resp.json
-            self.assertEqual(result['jsonrpc'], '2.0')
-            self.assertEqual(result['id'], id)
-        else:
-            result = resp.json
-            self.assertEqual(result, '')
-        return result
+        return body
 
     def test_it(self):
         def view(request, a, b):
@@ -82,7 +99,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['result'], {'a': 2, 'b': 3})
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], {'a': 2, 'b': 3})
 
     def test_it_with_no_mapper(self):
         def view(request):
@@ -95,7 +116,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['result'], 2)
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 2)
 
     def test_it_with_multiple_methods(self):
         def view(request, a, b):
@@ -109,7 +134,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['result'], 2)
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 2)
 
     def test_it_with_no_version(self):
         config = self.config
@@ -118,7 +147,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3], version=None)
-        self.assertEqual(result['error']['code'], -32600)
+        result_batch = self._callFUT(app, 'dummy', [2, 3], version=None, batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32600)
 
     def test_it_with_no_method(self):
         config = self.config
@@ -127,7 +160,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, None, [2, 3])
-        self.assertEqual(result['error']['code'], -32600)
+        result_batch = self._callFUT(app, None, [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32600)
 
     def test_it_with_no_id(self):
         def view(request, a, b):
@@ -139,7 +176,9 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3], id=None)
+        result_batch = self._callFUT(app, 'dummy', [2, 3], id=None, batch=True)
         self.assertEqual(result, '')
+        self.assertEqual(result_batch, '')
 
     def test_it_with_no_params(self):
         def view(request):
@@ -152,7 +191,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', None)
-        self.assertEqual(result['result'], 'no params')
+        result_batch = self._callFUT(app, 'dummy', None, batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'no params')
 
     def test_it_with_named_params(self):
         def view(request, three, four, five):
@@ -165,7 +208,12 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', {'four':4, 'five':5, 'three':3})
-        self.assertEqual(result['result'], 'named params')
+        result_batch = self._callFUT(app, 'dummy', {'four':4, 'five':5, 'three':3},
+                                     batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'named params')
 
     def test_it_with_named_params_and_default_values(self):
         def view(request, three, four = 4 , five = 'foo' ):
@@ -178,7 +226,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', { 'five':5, 'three':3})
-        self.assertEqual(result['result'], 'named params')
+        result_batch = self._callFUT(app, 'dummy', { 'five':5, 'three':3}, batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'named params')
 
     def test_it_with_invalid_method(self):
         config = self.config
@@ -187,7 +239,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'foo', [2, 3])
-        self.assertEqual(result['error']['code'], -32601)
+        result_batch = self._callFUT(app, 'foo', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32601)
 
     def test_it_with_invalid_body(self):
         config = self.config
@@ -213,7 +269,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['error']['code'], -32603)
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32603)
 
     def test_it_with_rpc_error(self):
         from pyramid_rpc.jsonrpc import JsonRpcError
@@ -226,9 +286,13 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [])
-        self.assertEqual(result['error']['code'], 500)
-        self.assertEqual(result['error']['message'], 'dummy')
-        self.assertFalse('data' in result['error'])
+        result_batch = self._callFUT(app, 'dummy', [], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], 500)
+            self.assertEqual(result['error']['message'], 'dummy')
+            self.assertFalse('data' in result['error'])
 
     def test_it_with_rpc_error_with_data(self):
         from pyramid_rpc.jsonrpc import JsonRpcError
@@ -241,9 +305,13 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [])
-        self.assertEqual(result['error']['code'], 500)
-        self.assertEqual(result['error']['message'], 'dummy')
-        self.assertEqual(result['error']['data'], 'foo')
+        result_batch = self._callFUT(app, 'dummy', [], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], 500)
+            self.assertEqual(result['error']['message'], 'dummy')
+            self.assertEqual(result['error']['data'], 'foo')
 
     def test_it_with_cls_view(self):
         class view(object):
@@ -260,7 +328,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['result'], [2, 3])
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], [2, 3])
 
     def test_it_with_named_args_and_cls_view(self):
         class view(object):
@@ -277,7 +349,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', {'b':3, 'a':2})
-        self.assertEqual(result['result'], [2, 3])
+        result_batch = self._callFUT(app, 'dummy', {'b':3, 'a':2}, batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], [2, 3])
 
     def test_it_with_default_args(self):
         def view(request, a, b, c='bar'):
@@ -289,7 +365,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3])
-        self.assertEqual(result['result'], [2, 3, 'bar'])
+        result_batch = self._callFUT(app, 'dummy', [2, 3], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], [2, 3, 'bar'])
 
     def test_it_with_missing_args(self):
         config = self.config
@@ -300,7 +380,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2])
-        self.assertEqual(result['error']['code'], -32602)
+        result_batch = self._callFUT(app, 'dummy', [2], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32602)
 
     def test_it_with_too_many_args(self):
         config = self.config
@@ -311,7 +395,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [2, 3, 4])
-        self.assertEqual(result['error']['code'], -32602)
+        result_batch = self._callFUT(app, 'dummy', [2, 3, 4], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32602)
 
     def test_it_error_with_no_id(self):
         def view(request):
@@ -323,7 +411,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [], id=None, expect_error=True)
-        self.assertEqual(result['error']['code'], -32603)
+        result_batch = self._callFUT(app, 'dummy', [], id=None, expect_error=True, batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['error']['code'], -32603)
 
     def test_it_with_decorator(self):
         def view(request):
@@ -337,8 +429,13 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [])
-        self.assertEqual(result['result'], 'foo')
+        result_batch = self._callFUT(app, 'dummy', [], batch=True, batch_count=5)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'foo')
         self.assertTrue(dummy_decorator.called)
+        self.assertEqual(dummy_decorator.count['calls'], 6)
 
     def test_it_with_default_mapper(self):
         def view(request):
@@ -350,7 +447,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', ['a', 'b', 'c'])
-        self.assertEqual(result['result'], ['a', 'b', 'c'])
+        result_batch = self._callFUT(app, 'dummy', ['a', 'b', 'c'], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], ['a', 'b', 'c'])
 
     def test_override_default_mapper(self):
         from pyramid_rpc.mapper import MapplyViewMapper
@@ -364,7 +465,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', ['a', 'b', 'c'])
-        self.assertEqual(result['result'], ['a', 'b', 'c'])
+        result_batch = self._callFUT(app, 'dummy', ['a', 'b', 'c'], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], ['a', 'b', 'c'])
 
     def test_it_with_default_renderer(self):
         def view(request):
@@ -379,8 +484,13 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [])
-        self.assertEqual(result['result'], 'foo')
+        result_batch = self._callFUT(app, 'dummy', [], batch=True, batch_count=5)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'foo')
         self.assertEqual(dummy_renderer.called, True)
+        self.assertEqual(dummy_renderer.count['calls'], 6)
 
     def test_override_default_renderer(self):
         def view(request):
@@ -398,9 +508,14 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = config.make_wsgi_app()
         app = TestApp(app)
         result = self._callFUT(app, 'dummy', [])
-        self.assertEqual(result['result'], 'baz')
+        result_batch = self._callFUT(app, 'dummy', [], batch=True, batch_count=5)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], 'baz')
         self.assertEqual(dummy_renderer.called, False)
         self.assertEqual(dummy_renderer2.called, True)
+        self.assertEqual(dummy_renderer2.count['calls'], 6)
 
     def test_nonascii_request(self):
         def view(request, a):
@@ -413,7 +528,11 @@ class TestJSONRPCIntegration(unittest.TestCase):
         app = TestApp(app)
         val = b'S\xc3\xa9bastien'.decode('utf-8')
         result = self._callFUT(app, 'dummy', [val])
-        self.assertEqual(result['result'], val)
+        result_batch = self._callFUT(app, 'dummy', [val], batch=True)
+        self.assertEqual(type(result_batch), list)
+        result_batch.append(result)
+        for result in result_batch:
+            self.assertEqual(result['result'], val)
 
 
 class TestGET(unittest.TestCase):
@@ -524,10 +643,12 @@ class TestGET(unittest.TestCase):
 
 class DummyDecorator(object):
     called = False
+    count = {"calls": 0}
 
     def __call__(self, view):
         def wrapper(context, request):
             self.called = True
+            self.count['calls'] += 1
             return view(context, request)
         return wrapper
 
@@ -537,10 +658,12 @@ class DummyRenderer(object):
 
     def __init__(self, result):
         self.result = result
+        self.count = {"calls": 0}
 
     def __call__(self, info):
         def _render(value, system):
             self.called = True
+            self.count['calls'] += 1
             value['result'] = self.result
             return json.dumps(value)
         return _render

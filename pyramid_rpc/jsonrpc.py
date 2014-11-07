@@ -170,30 +170,30 @@ class jsonrpc_batch_tween(object):
         self.registry = registry
 
     def __call__(self, request):
-        # Check if it is a JSON request.
+        # Check if it is a JSON request and a list.
         try:
-            if type(request.json_body) is list:
-                response_body = []
-                for json_request in request.json_body[:]:
-                    # We only support this on JSONRPC Version 2.0. This check has to be unicode safe.
-                    if json_request.get('jsonrpc',json_request.get(u'jsonrpc')) not in ['2.0', u'2.0']:
-                        raise ValueError
+            json_body = request.json_body[:]
+        except (ValueError, TypeError):
+            return self.handler(request)
 
-                    # pyramid.request.Request.json_body is only a decorator
-                    # applying json.loads to pyramid.request.Request.body
-                    request.body = json.dumps(json_request)
+        response_body = []
+        for json_request in json_body:
+            # request.json_body is only a decorator applying json.loads to request.body
+            request.body = json.dumps(json_request)
 
-                    # Keep the last response object and extract the json
-                    # from the body.
-                    response = self.handler(request)
-                    response_body.append(json.loads(response.body))
-
-                # Dump the combined json response_body list into response.body
-                response.body = json.dumps(response_body)
-            else:
-                raise ValueError
-        except ValueError:
+            # Keep the last response object and extract the json
+            # from the body.
             response = self.handler(request)
+            response_body.append(json.loads(response.body))
+
+        response_body = [result for result in response_body if result != '']
+        if len(response_body) == 0:
+            # If no response objects are available the JSONRPC Specification forbids
+            # sending an empty array. An empty string is sent instead.
+            response.body = '""'
+        else:
+            # Dump the combined json response_body list into response.body
+            response.body = json.dumps(response_body)
 
         return response
 
