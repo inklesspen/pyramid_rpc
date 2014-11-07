@@ -160,6 +160,42 @@ class jsonrpc_view(object):
         return result
 
 
+class jsonrpc_batch_tween(object):
+    """ Pyramid Tween used to intercept requests and handle batch requests
+    transparently for pyramid_rpc in accordance with the JSONRPC 2.0 Specification.
+
+    """
+    def __init__(self, handler, registry):
+        self.handler = handler
+        self.registry = registry
+
+    def __call__(self, request):
+        # Check if it is a JSON request.
+        try:
+            if type(request.json_body) is list:
+                response_body = []
+                for json_request in request.json_body[:]:
+                    # We only support this on JSONRPC Version 2.0. This check has to be unicode safe.
+                    if json_request.get('jsonrpc',json_request.get(u'jsonrpc')) not in ['2.0', u'2.0']:
+                        raise ValueError
+
+                    # pyramid.request.Request.json_body is only a decorator
+                    # applying json.loads to pyramid.request.Request.body
+                    request.body = json.dumps(json_request)
+
+                    # Keep the last response object and extract the json
+                    # from the body.
+                    response = self.handler(request)
+                    response_body.append(json.loads(response.body))
+
+                # Dump the combined json response_body list into response.body
+                response.body = json.dumps(response_body)
+        except ValueError:
+            response = self.handler(request)
+
+        return response
+
+
 def parse_request_GET(request):
     """ Parse JSON-RPC parameters from the request query string."""
     args = request.GET.get('params')
@@ -421,6 +457,8 @@ def includeme(config):
     """
     if not hasattr(config.registry, 'rpc_endpoints'):
         config.registry.rpc_endpoints = {}
+
+    config.add_tween('pyramid_rpc.jsonrpc.jsonrpc_batch_tween')
 
     config.add_renderer(DEFAULT_RENDERER, jsonrpc_renderer)
     config.add_directive('add_jsonrpc_endpoint', add_jsonrpc_endpoint)
