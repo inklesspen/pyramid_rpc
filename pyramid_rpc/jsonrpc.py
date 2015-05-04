@@ -15,6 +15,8 @@ from pyramid_rpc.mapper import MapplyViewMapper
 from pyramid_rpc.mapper import ViewMapperArgsInvalid
 from pyramid_rpc.util import combine
 
+from pyramid.tweens import EXCVIEW
+
 
 log = logging.getLogger(__name__)
 
@@ -460,7 +462,7 @@ def includeme(config):
     if not hasattr(config.registry, 'rpc_endpoints'):
         config.registry.rpc_endpoints = {}
 
-    config.add_tween('pyramid_rpc.jsonrpc.jsonrpc_batch_tween')
+    config.add_tween('pyramid_rpc.jsonrpc.jsonrpc_batch_tween', over=EXCVIEW)
 
     config.add_renderer(DEFAULT_RENDERER, jsonrpc_renderer)
     config.add_directive('add_jsonrpc_endpoint', add_jsonrpc_endpoint)
