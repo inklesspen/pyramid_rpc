@@ -37,16 +37,13 @@ tests_require = install_requires + [
     'WebTest',
 ]
 
-if not PY3:
-    tests_require.extend([
-        'pyamf',
-    ])
-
 testing_extras = tests_require + [
+    'coverage',
     'nose',
 ]
 
 docs_require = [
+    'pylons-sphinx-themes >= 0.3',
     'Sphinx',
 ]
 
@@ -63,7 +60,7 @@ setup(name='pyramid_rpc',
           "Programming Language :: Python :: 2.7",
           "Programming Language :: Python :: 3.2",
           "Programming Language :: Python :: 3.3",
-          "Programming Language :: Python :: Implementation :: CPython",
+          "Programming Language :: Python :: 3.4",
           "Framework :: Pyramid",
       ],
       keywords='web wsgi pyramid pylons xml-rpc json-rpc',
@@ -81,7 +78,7 @@ setup(name='pyramid_rpc',
       extras_require = {
           'testing':testing_extras,
           'docs':docs_require,
-          'amf':['pyamf'],
+          'amf':['pyamf<=0.6.99'],
           },
       test_suite="pyramid_rpc.tests",
       )
