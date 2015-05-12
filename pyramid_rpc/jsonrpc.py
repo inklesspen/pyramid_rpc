@@ -180,22 +180,25 @@ class jsonrpc_batch_tween(object):
 
         response_body = []
         for json_request in json_body:
-            # request.json_body is only a decorator applying json.loads to request.body
-            request.body = json.dumps(json_request)
+            # request.json_body is only a decorator applying json.loads to
+            # request.body
+            request.body = json.dumps(json_request).encode(request.charset)
 
             # Keep the last response object and extract the json
             # from the body.
             response = self.handler(request)
-            response_body.append(json.loads(response.body))
+            response_body.append(
+                json.loads(
+                    response.body.decode(response.charset)))
 
         response_body = [result for result in response_body if result != '']
         if len(response_body) == 0:
-            # If no response objects are available the JSONRPC Specification forbids
-            # sending an empty array. An empty string is sent instead.
-            response.body = '""'
+            # If no response objects are available the JSONRPC Specification
+            # forbids sending an empty array. An empty string is sent instead.
+            response.body = b'""'
         else:
             # Dump the combined json response_body list into response.body
-            response.body = json.dumps(response_body)
+            response.body = json.dumps(response_body).encode(response.charset)
 
         return response
 
