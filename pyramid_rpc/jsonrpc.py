@@ -2,6 +2,7 @@ import json
 import logging
 
 import venusian
+from pyramid.events import ContextFound
 from pyramid.exceptions import ConfigurationError
 from pyramid.httpexceptions import HTTPForbidden
 from pyramid.httpexceptions import HTTPNotFound
@@ -202,59 +203,42 @@ def parse_request_POST(request):
         request.rpc_version = body.get('jsonrpc')
 
 
-def setup_request(endpoint, request):
-    """ Parse a JSON-RPC request body."""
-    if request.method == 'GET':
-        parse_request_GET(request)
-    elif request.method == 'POST':
-        parse_request_POST(request)
-    else:
-        log.debug('unsupported request method "%s"', request.method)
-        raise JsonRpcRequestInvalid
+def setup_rpc_request(event):
+    """
+    A ContextFound subscriber which sets the rpc_foobar properties
+    on the request
+    """
+    request = event.request
+    matched_route = request.matched_route
+    endpoints = request.registry.jsonrpc_endpoints
+    if matched_route is not None and matched_route.name in endpoints:
+        endpoint = endpoints[matched_route.name]
+        request.rpc_endpoint = endpoint
+        # potentially setup either rpc v1 or v2 from the parsed body
+        if request.method == 'GET':
+            parse_request_GET(request)
+        elif request.method == 'POST':
+            parse_request_POST(request)
+        else:
+            log.debug('unsupported request method "%s"', request.method)
+            raise JsonRpcRequestInvalid
 
-    if hasattr(request, 'batched_rpc_requests'):
-        log.debug('handling batched rpc request')
-        # the checks below will look at the subrequests
-        return
+        if hasattr(request, 'batched_rpc_requests'):
+            log.debug('handling batched rpc request')
+            # the checks below will look at the subrequests
+            return
 
-    if request.rpc_version != '2.0':
-        log.debug('id:%s invalid rpc version %s',
-                  request.rpc_id, request.rpc_version)
-        raise JsonRpcRequestInvalid
+        if request.rpc_version != '2.0':
+            log.debug('id:%s invalid rpc version %s',
+                      request.rpc_id, request.rpc_version)
+            raise JsonRpcRequestInvalid
 
-    if request.rpc_method is None:
-        log.debug('id:%s invalid rpc method', request.rpc_id)
-        raise JsonRpcRequestInvalid
+        if request.rpc_method is None:
+            log.debug('id:%s invalid rpc method', request.rpc_id)
+            raise JsonRpcRequestInvalid
 
-    log.debug('handling id:%s method:%s',
-              request.rpc_id, request.rpc_method)
-
-
-class EndpointPredicate(object):
-    def __init__(self, val, config):
-        self.val = val
-
-    def text(self):
-        return 'jsonrpc endpoint = %s' % self.val
-
-    phash = text
-
-    def __call__(self, info, request):
-        if self.val:
-            # find the endpoint info
-            key = info['route'].name
-            endpoint = request.registry.jsonrpc_endpoints[key]
-
-            # potentially setup either rpc v1 or v2 from the parsed body
-            setup_request(endpoint, request)
-
-            # update request with endpoint information
-            request.rpc_endpoint = endpoint
-
-            # Always return True so that even if it isn't a valid RPC it
-            # will fall through to the notfound_view which will still
-            # return a valid JSON-RPC response.
-            return True
+        log.debug('handling id:%s method:%s',
+                  request.rpc_id, request.rpc_method)
 
 
 class MethodPredicate(object):
@@ -353,14 +337,12 @@ def add_jsonrpc_endpoint(config, name, *args, **kw):
 
     config.registry.jsonrpc_endpoints[name] = endpoint
 
-    kw['jsonrpc_endpoint'] = True
     config.add_route(name, *args, **kw)
 
-    kw = {}
-    kw['jsonrpc_batched'] = True
-    kw['renderer'] = null_renderer
     config.add_view(batched_request_view, route_name=name,
-                    permission=NO_PERMISSION_REQUIRED, **kw)
+                    permission=NO_PERMISSION_REQUIRED,
+                    jsonrpc_batched=True,
+                    renderer=null_renderer)
     config.add_view(exception_view, route_name=name, context=Exception,
                     permission=NO_PERMISSION_REQUIRED)
 
@@ -497,7 +479,7 @@ def includeme(config):
 
     config.add_view_predicate('jsonrpc_method', MethodPredicate)
     config.add_view_predicate('jsonrpc_batched', BatchedRequestPredicate)
-    config.add_route_predicate('jsonrpc_endpoint', EndpointPredicate)
+    config.add_subscriber(setup_rpc_request, ContextFound)
 
     config.add_renderer(DEFAULT_RENDERER, jsonrpc_renderer)
     config.add_directive('add_jsonrpc_endpoint', add_jsonrpc_endpoint)

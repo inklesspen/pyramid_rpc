@@ -14,7 +14,9 @@ class Root(dict):
 
     def __init__(self, request):
         self.request = request
-        self.__acl__ = ACLS.get(request.rpc_method)
+
+    def __acl__(self):
+        return ACLS.get(self.request.rpc_method)
 
 def basic(request):
     return 'basic'
